@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import time
+import random
 
 def calculate_carbon_grades(rougher_air, jameson_air, luproset, feed_carbon):
     """Calculate concentrate and tailings carbon grades based on rougher air, jameson air and luproset"""
@@ -109,6 +110,24 @@ def calculate_performance(rougher_air, jameson_air, luproset, feed_carbon):
     
     return total_recovery, concentrate_carbon, tailings_carbon, conc_mass, tail_mass, carbon_recovery, zn_loss
 
+def generate_random_feed_carbon(current_value):
+    """Generate a realistic random feed carbon value with gradual changes"""
+    # Generate change within ±0.5% of current value
+    variation = random.uniform(-1,1)
+    new_value = current_value + variation
+    # Keep within realistic bounds
+    return max(3.0, min(6.0, new_value))
+
+# Initialize session state
+if 'dynamic_mode' not in st.session_state:
+    st.session_state.dynamic_mode = False
+if 'last_update_time' not in st.session_state:
+    st.session_state.last_update_time = time.time()
+if 'dynamic_feed_carbon' not in st.session_state:
+    st.session_state.dynamic_feed_carbon = 4.5
+if 'update_counter' not in st.session_state:
+    st.session_state.update_counter = 0
+
 # Streamlit App
 st.set_page_config(
     page_title="Carbon Reverse Flotation Simulator",
@@ -116,35 +135,118 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("⚫ Pre Flotation Simulator")
+st.title("⚫ Pre Flotation Simulator - Dynamic Training Mode")
 st.markdown("Parameters - Rougher Air, Jameson Air & Luproset")
 
-# Sidebar controls - now with 4 parameters
+# Dynamic mode controls
+col1, col2, col3 = st.columns([2, 2, 3])
+
+with col1:
+    if st.button("🚀 Start Dynamic Mode", type="primary"):
+        st.session_state.dynamic_mode = True
+        st.session_state.last_update_time = time.time()
+        st.session_state.update_counter = 0
+        st.rerun()
+
+with col2:
+    if st.button("⏹️ Stop Dynamic Mode", type="secondary"):
+        st.session_state.dynamic_mode = False
+        st.rerun()
+
+with col3:
+    if st.session_state.dynamic_mode:
+        current_time = time.time()
+        time_since_last_update = current_time - st.session_state.last_update_time
+        
+        # Update every 60 seconds (1 minute)
+        if time_since_last_update >= 30:
+            st.session_state.dynamic_feed_carbon = generate_random_feed_carbon(st.session_state.dynamic_feed_carbon)
+            st.session_state.last_update_time = current_time
+            st.session_state.update_counter += 1
+            st.rerun()
+        
+        # Show countdown
+        time_remaining = 30 - time_since_last_update
+        st.markdown(f"**🔄 Dynamic Mode Active** | Next update in: {time_remaining:.0f}s | Update #{st.session_state.update_counter}")
+    else:
+        st.markdown("**⏸️ Dynamic Mode Inactive**")
+
+# Sidebar controls
 st.sidebar.header("Process Parameters")
 
-rougher_air = st.sidebar.slider(
+# Dynamic mode notification
+if st.session_state.dynamic_mode:
+    st.sidebar.warning("🔄 Dynamic Mode: Feed carbon changes automatically every minute!")
+
+# Initialize parameter session state if not exists
+if 'rougher_air_setpoint' not in st.session_state:
+    st.session_state.rougher_air_setpoint = 0
+if 'jameson_air_setpoint' not in st.session_state:
+    st.session_state.jameson_air_setpoint = 0
+if 'luproset_setpoint' not in st.session_state:
+    st.session_state.luproset_setpoint = 80
+
+st.sidebar.markdown("**Enter New Setpoints:**")
+
+# Input boxes for setpoints
+new_rougher_air = st.sidebar.number_input(
     "Rougher Air (m3/hr)",
-    min_value=0, max_value=1000, value=0, step=50,
+    min_value=0, max_value=1000, 
+    value=st.session_state.rougher_air_setpoint,
+    step=10,
+    key="rougher_air_input",
     help="Rougher air rate - HIGHER increases recovery but decreases grade"
 )
 
-jameson_air = st.sidebar.slider(
+new_jameson_air = st.sidebar.number_input(
     "Jameson Air (m3/hr)",
-    min_value=0, max_value=600, value=0, step=25,
+    min_value=0, max_value=600, 
+    value=st.session_state.jameson_air_setpoint,
+    step=5,
+    key="jameson_air_input",
     help="Jameson air rate - Same effect as rougher air but half the magnitude"
 )
 
-luproset = st.sidebar.slider(
+new_luproset = st.sidebar.number_input(
     "Luproset Dosage (g/t)",
-    min_value=0, max_value=100, value=80, step=5,
+    min_value=0, max_value=100, 
+    value=st.session_state.luproset_setpoint,
+    step=1,
+    key="luproset_input",
     help="Carbon depressant - HIGHER reduces recovery but increases grade"
 )
 
-feed_carbon = st.sidebar.slider(
-    "Feed Carbon (%)",
-    min_value=3.0, max_value=6.0, value=4.5, step=0.1,
-    help="Carbon content in feed stream"
-)
+# Auto-apply changes when values change (on Enter key press)
+if (new_rougher_air != st.session_state.rougher_air_setpoint or 
+    new_jameson_air != st.session_state.jameson_air_setpoint or 
+    new_luproset != st.session_state.luproset_setpoint):
+    st.session_state.rougher_air_setpoint = new_rougher_air
+    st.session_state.jameson_air_setpoint = new_jameson_air
+    st.session_state.luproset_setpoint = new_luproset
+
+# Use the stored setpoints for calculations
+rougher_air = st.session_state.rougher_air_setpoint
+jameson_air = st.session_state.jameson_air_setpoint
+luproset = st.session_state.luproset_setpoint
+
+# Show current setpoints
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Current Setpoints:**")
+st.sidebar.markdown(f"• Rougher Air: **{rougher_air} m³/hr**")
+st.sidebar.markdown(f"• Jameson Air: **{jameson_air} m³/hr**")
+st.sidebar.markdown(f"• Luproset: **{luproset} g/t**")
+
+# Feed carbon - either manual or dynamic
+if st.session_state.dynamic_mode:
+    feed_carbon = st.session_state.dynamic_feed_carbon
+    st.sidebar.markdown(f"**Feed Carbon (Dynamic): {feed_carbon:.2f}%**")
+    st.sidebar.markdown("*Auto-updating every minute*")
+else:
+    feed_carbon = st.sidebar.slider(
+        "Feed Carbon (%)",
+        min_value=3.0, max_value=6.0, value=4.5, step=0.1,
+        help="Carbon content in feed stream"
+    )
 
 # Calculate performance
 recovery, concentrate_carbon, tailings_carbon, conc_mass, tail_mass, mass_balance_recovery, zn_loss = calculate_performance(
@@ -186,264 +288,14 @@ with col3:
 
 with col4:
     st.metric(
-        "Concentrate Mass", 
-        f"{conc_mass:.1f}t"
-    )
-
-with col5:
-    st.metric(
         "Zn Loss", 
         f"{zn_loss:.2f}%",
-        delta=f"{zn_loss - 1.5:.2f}%" if zn_loss != 1.5 else None,
-        delta_color="inverse"
+        
     )
 
-# Stream summary
-st.subheader("Stream Summary (Base: 260t Feed)")
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.info(f"""
-    **Feed Stream**
-    - Mass: 260.0 t
-    - Carbon: {feed_carbon:.1f}%
-    - Total Carbon: {feed_carbon * 260 / 100:.1f} t
-    """)
-
-with col2:
-    st.success(f"""
-    **Concentrate Stream**
-    - Mass: {conc_mass:.1f} t
-    - Carbon: {concentrate_carbon:.1f}%
-    - Total Carbon: {conc_mass * concentrate_carbon / 100:.1f} t
-    """)
-
-with col3:
-    st.warning(f"""
-    **Tailings Stream**
-    - Mass: {tail_mass:.1f} t
-    - Carbon: {tailings_carbon:.2f}%
-    - Total Carbon: {tail_mass * tailings_carbon / 100:.1f} t
-    """)
-
-# Performance visualization
-col1, col2 = st.columns(2)
-
-with col1:
-    # Grade-Recovery plot
-    fig1 = go.Figure()
-    
-    # Add current operating point
-    fig1.add_scatter(
-        x=[recovery], y=[concentrate_carbon],
-        mode='markers',
-        marker=dict(size=15, color='black', symbol='star'),
-        name='Current Operation',
-        text=[f'Rougher: {rougher_air}, Jameson: {jameson_air}, Luproset: {luproset}'],
-        textposition="top center"
-    )
-    
-    # Add target zone
-    fig1.add_shape(
-        type="rect",
-        x0=50, y0=40, x1=70, y1=55,
-        fillcolor="lightgreen", opacity=0.3,
-        line=dict(color="green", width=2)
-    )
-    
-    fig1.add_annotation(
-        x=60, y=47.5,
-        text="Target Zone",
-        showarrow=False,
-        font=dict(color="green", size=12)
-    )
-    
-    fig1.update_layout(
-        title="Carbon Grade vs Recovery",
-        xaxis_title="Carbon Recovery (%)",
-        yaxis_title="Concentrate Carbon Grade (%)",
-        showlegend=True,
-        height=400
-    )
-    
-    st.plotly_chart(fig1, use_container_width=True)
-
-with col2:
-    # Parameter effects plot - comparing rougher and jameson air
-    fig2 = go.Figure()
-    
-    # Air rate effect comparison
-    air_range = np.linspace(100, 1000, 20)
-    recovery_rougher = [calculate_performance(a, jameson_air, luproset, feed_carbon)[0] for a in air_range]
-    grade_rougher = [calculate_performance(a, jameson_air, luproset, feed_carbon)[1] for a in air_range]
-    zn_loss_rougher = [calculate_performance(a, jameson_air, luproset, feed_carbon)[6] for a in air_range]
-    
-    # Scale jameson range to similar values for comparison
-    jameson_range = np.linspace(50, 500, 20)
-    recovery_jameson = [calculate_performance(rougher_air, j, luproset, feed_carbon)[0] for j in jameson_range]
-    grade_jameson = [calculate_performance(rougher_air, j, luproset, feed_carbon)[1] for j in jameson_range]
-    zn_loss_jameson = [calculate_performance(rougher_air, j, luproset, feed_carbon)[6] for j in jameson_range]
-    
-    fig2.add_trace(go.Scatter(
-        x=air_range, y=recovery_rougher,
-        mode='lines', name='Recovery vs Rougher Air',
-        line=dict(color='blue', dash='solid')
-    ))
-    
-    fig2.add_trace(go.Scatter(
-        x=jameson_range, y=recovery_jameson,
-        mode='lines', name='Recovery vs Jameson Air',
-        line=dict(color='lightblue', dash='dash')
-    ))
-    
-    fig2.add_trace(go.Scatter(
-        x=air_range, y=grade_rougher,
-        mode='lines', name='Grade vs Rougher Air',
-        line=dict(color='red', dash='solid'), yaxis='y2'
-    ))
-    
-    fig2.add_trace(go.Scatter(
-        x=jameson_range, y=grade_jameson,
-        mode='lines', name='Grade vs Jameson Air',
-        line=dict(color='pink', dash='dash'), yaxis='y2'
-    ))
-    
-    # Add Zn loss curves
-    fig2.add_trace(go.Scatter(
-        x=air_range, y=zn_loss_rougher,
-        mode='lines', name='Zn Loss vs Rougher Air',
-        line=dict(color='orange', dash='solid'), yaxis='y3'
-    ))
-    
-    fig2.add_trace(go.Scatter(
-        x=jameson_range, y=zn_loss_jameson,
-        mode='lines', name='Zn Loss vs Jameson Air',
-        line=dict(color='gold', dash='dash'), yaxis='y3'
-    ))
-    
-    # Add current points
-    fig2.add_scatter(
-        x=[rougher_air], y=[recovery],
-        mode='markers', marker=dict(size=12, color='blue'),
-        name='Current Recovery (Rougher)'
-    )
-    
-    fig2.add_scatter(
-        x=[jameson_air], y=[recovery],
-        mode='markers', marker=dict(size=10, color='lightblue', symbol='square'),
-        name='Current Recovery (Jameson)'
-    )
-    
-    fig2.update_layout(
-        title="Air Rate Effects Comparison",
-        xaxis_title="Air Rate (m3/hr)",
-        yaxis=dict(title="Recovery (%)", side="left", color="blue"),
-        yaxis2=dict(title="Grade (%)", side="right", overlaying="y", color="red"),
-        yaxis3=dict(title="Zn Loss (%)", side="right", overlaying="y", position=0.95, color="orange"),
-        height=400,
-        legend=dict(x=0.02, y=0.98)
-    )
-    
-    st.plotly_chart(fig2, use_container_width=True)
-
-# Real-time trends
-if 'history' not in st.session_state:
-    st.session_state.history = []
-
-# Add to history when parameters change
-current_params = (rougher_air, jameson_air, luproset, feed_carbon)
-if 'last_params' not in st.session_state or st.session_state.last_params != current_params:
-    st.session_state.history.append({
-        'time': len(st.session_state.history),
-        'rougher_air': rougher_air,
-        'jameson_air': jameson_air,
-        'luproset': luproset,
-        'recovery': recovery,
-        'conc_grade': concentrate_carbon,
-        'tail_grade': tailings_carbon,
-        'conc_mass': conc_mass,
-        'zn_loss': zn_loss
-    })
-    st.session_state.last_params = current_params
-
-# Keep only last 30 points
-if len(st.session_state.history) > 30:
-    st.session_state.history = st.session_state.history[-30:]
-
-# Trends plot
-if len(st.session_state.history) > 1:
-    df_history = pd.DataFrame(st.session_state.history)
-    
-    st.subheader("Process Trends")
-    
-    fig3 = make_subplots(
-        rows=3, cols=2,
-        subplot_titles=('Recovery & Grade Trends', 'Air Rate Settings', 'Mass Distribution & Luproset', 'Tailings Carbon', 'Zn Loss Trend', 'Recovery vs Zn Loss'),
-        specs=[[{"secondary_y": True}, {"secondary_y": True}],
-               [{"secondary_y": True}, {"secondary_y": False}],
-               [{"secondary_y": False}, {"secondary_y": False}]]
-    )
-    
-    # Recovery and grade trends
-    fig3.add_trace(
-        go.Scatter(x=df_history['time'], y=df_history['recovery'], 
-                  name='Recovery', line=dict(color='blue')),
-        row=1, col=1
-    )
-    fig3.add_trace(
-        go.Scatter(x=df_history['time'], y=df_history['conc_grade'], 
-                  name='Conc Grade', line=dict(color='red')),
-        row=1, col=1, secondary_y=True
-    )
-    
-    # Air rate settings
-    fig3.add_trace(
-        go.Scatter(x=df_history['time'], y=df_history['rougher_air'], 
-                  name='Rougher Air', line=dict(color='green')),
-        row=1, col=2
-    )
-    fig3.add_trace(
-        go.Scatter(x=df_history['time'], y=df_history['jameson_air'], 
-                  name='Jameson Air', line=dict(color='lightgreen')),
-        row=1, col=2, secondary_y=True
-    )
-    
-    # Mass distribution and luproset
-    fig3.add_trace(
-        go.Scatter(x=df_history['time'], y=df_history['conc_mass'], 
-                  name='Conc Mass', line=dict(color='black')),
-        row=2, col=1
-    )
-    fig3.add_trace(
-        go.Scatter(x=df_history['time'], y=df_history['luproset'], 
-                  name='Luproset', line=dict(color='orange')),
-        row=2, col=1, secondary_y=True
-    )
-    
-    # Tailings grade
-    fig3.add_trace(
-        go.Scatter(x=df_history['time'], y=df_history['tail_grade'], 
-                  name='Tail Grade', line=dict(color='brown')),
-        row=2, col=2
-    )
-    
-    # Zn loss trend
-    fig3.add_trace(
-        go.Scatter(x=df_history['time'], y=df_history['zn_loss'], 
-                  name='Zn Loss', line=dict(color='purple')),
-        row=3, col=1
-    )
-    
-    # Recovery vs Zn Loss correlation
-    fig3.add_trace(
-        go.Scatter(x=df_history['recovery'], y=df_history['zn_loss'], 
-                  mode='markers', name='Recovery vs Zn Loss', 
-                  marker=dict(color='red', size=6)),
-        row=3, col=2
-    )
-    
-    fig3.update_layout(height=800, title_text="Historical Performance")
-    st.plotly_chart(fig3, use_container_width=True)
+# Dynamic mode guidance
+if st.session_state.dynamic_mode:
+    st.info("🎯 **Training Challenge**: Adjust your process parameters to maintain optimal performance as feed conditions change!")
 
 # Operating guidance
 st.subheader("Operating Guidance")
@@ -454,11 +306,7 @@ with col1:
     st.markdown("**Parameter Effects:**")
     st.markdown("- **Higher Rougher Air** = Higher recovery, Lower grade, Higher Zn loss")
     st.markdown("- **Higher Jameson Air** = Higher recovery, Lower grade, Higher Zn loss")
-    st.markdown("- **Higher Luproset** = Lower recovery, Higher grade, Lower Zn loss")
-    st.markdown("- **Target Recovery**: 20-45%")
-    st.markdown("- **Target Concentrate Grade**: 30-45%")
-    st.markdown("- **Target Zn Loss**: <2.5%")
-    
+    st.markdown("- **Higher Luproset** = Lower recovery, Higher grade, Lower Zn loss")   
 
 with col2:
     st.markdown("**Optimization Tips:**")
@@ -468,24 +316,21 @@ with col2:
         st.markdown("- Increase jameson air rate")
         st.markdown("- Reduce luproset dosage")
     
-    if concentrate_carbon < 30:
-        st.markdown("🔧 **To increase grade:**")
-        st.markdown("- Reduce rougher air rate")
-        st.markdown("- Reduce jameson air rate")
-        st.markdown("- Increase luproset dosage")
     
     if tailings_carbon > 3.5:
         st.markdown("⚠️ **High tailings carbon - check:**")
         st.markdown("- Reduce luproset (less carbon depressed)")
         st.markdown("- Increase air rates (more recovery)")
     
-    if zn_loss > 2.5:
-        st.markdown("⚠️ **High Zn loss - check:**")
-        st.markdown("- Reduce air rates (lower recovery)")
-        st.markdown("- Increase luproset (reduce recovery)")
-        st.markdown("- Balance recovery vs Zn retention")
 
 # Reset button
-if st.button("Reset Trends", type="secondary"):
-    st.session_state.history = []
+if st.button("Reset All", type="secondary"):
+    st.session_state.dynamic_mode = False
+    st.session_state.dynamic_feed_carbon = 4.5
+    st.session_state.update_counter = 0
+    st.rerun()
+
+# Auto-refresh for dynamic mode
+if st.session_state.dynamic_mode:
+    time.sleep(1)  # Small delay to prevent excessive refreshing
     st.rerun()
